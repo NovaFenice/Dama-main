@@ -5,23 +5,10 @@
 #include <SDL2/SDL_image.h>
 #include <string.h>
 
-#define SPOSTA_Y(a, b) a.x, a.y + b //Sposta SDL_Point in verticale secondo b
-#define COORD(a) a.x, a.y //Semplifica il codice e sostituisce le coordinate usando un SDL_Point
+#define SPOSTA_Y(a, b) a.x, a.y + b
+#define COORD(a) a.x, a.y
 
 #define toggleTurn turn = !turn
-#define resetGame turn = 0; for(int y = 0; y<BOARD_SIZE; y++){\
-        for(int x = 0; x<BOARD_SIZE; x++){\
-            board[x][y] = -1;\
-            int even = (x + y) % 2; \
-            if( even && y < BOARD_SIZE/2 - 1)\
-                board[x][y] = 1;\
-            if( even && y > BOARD_SIZE/2)\
-                board[x][y] = 0;\
-        }\
-    }\
-    ate = 0; n_moves = 0;\
-    game_state = 0;
-
 #define BOARD_SIZE 8
 #define to_grid BOARD_SIZE / WINDOW_WIDTH
 #define SQUARE_SIZE WINDOW_WIDTH / BOARD_SIZE
@@ -30,11 +17,274 @@
 #define GRID_WIDTH 500
 #define GRID_HEIGHT 400
 
-/*
-Controlla chi deve fare una mossa
-    0 Bianco
-    1 Nero
-*/
+bool patta(int board[BOARD_SIZE][BOARD_SIZE], int player) {
+    for(int x = 0; x < BOARD_SIZE; x++){
+        for(int y = 0; y < BOARD_SIZE; y++){
+            int piece = board[x][y];
+            if(player != (piece % 2)) { continue; }
+            if (piece == -1) continue;
+            int enemy = (piece + 1) % 2;
+            int up = -1;
+            int right = -1;
+            int moveX, moveY;
+            if (piece % 2) { //Il pezzo è nero si muove in basso e a destra
+                up = 1;
+                right = 1;
+            }
+            moveX = x + right;
+            moveY = y + up;
+            if(board[moveX][moveY] == -1 || board[x-right][moveY] == -1) {
+                return false;
+            }
+
+            moveX = x + right;
+            moveY = y + up;
+            if (piece <= 1 && board[moveX][moveY] == enemy) {
+                moveX = x + 2 * right;
+                moveY = y + 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    return false;
+                }
+            }
+
+            moveX = x - right;
+            moveY = y + up;
+            if (piece <= 1 && board[moveX][moveY] == enemy) {
+                moveX = x - 2 * right;
+                moveY = y + 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    return false;
+                }
+            }
+
+            //Se il pezzo è una dama
+            if(piece > 1){
+                moveX = x + right;
+                moveY = y - up;
+                if (board[moveX][moveY] % 2 == enemy ) {
+                    moveX = x + 2 * right;
+                    moveY = y - 2 * up;
+                    if (board[moveX][moveY] == -1) {
+                        return false;
+                    }
+                }
+
+                moveX = x - right;
+                moveY = y - up;
+                if (board[moveX][moveY] % 2 == enemy) {
+                    moveX = x - 2 * right;
+                    moveY = y - 2 * up;
+                    if (board[moveX][moveY] == -1) {
+                        return false;
+                    }
+                }
+
+                moveX = x + right;
+                moveY = y + up;
+                if (board[moveX][moveY]%2 == enemy) {
+                    moveX = x + 2 * right;
+                    moveY = y + 2 * up;
+                    if (board[moveX][moveY] == -1) {
+                        return false;
+                    }
+                }
+
+                moveX = x - right;
+                moveY = y + up;
+                if (board[moveX][moveY]%2 == enemy) {
+                    moveX = x - 2 * right;
+                    moveY = y + 2 * up;
+                    if (board[moveX][moveY] == -1) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool isThereAnyPiece(int board[BOARD_SIZE][BOARD_SIZE]) {
+    bool anyWhite = false, anyBlack = false;
+
+    for (int x = 0; x < BOARD_SIZE; x++) {
+        for (int y = 0; y < BOARD_SIZE; y++) {
+            if (board[x][y] == 0 || board[x][y] == 2) {
+                anyWhite = true;
+            } 
+            if (board[x][y] == 1 || board[x][y] == 3) { 
+                anyBlack = true;
+            }
+            if (anyWhite && anyBlack) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
+int get_moves(int board[BOARD_SIZE][BOARD_SIZE], int piece, int* n_moves, int x, int y, SDL_Point* moves, SDL_Point* eating_pieces){
+    // la variabile enemy intende dire che il pezzo opposto, nel senso che se e' il turno del bianco allora il nero e' il suo enemy e viceversa
+    int enemy = (piece + 1) % 2;
+    int n = 0;
+    // Se il pezzo è bianco inverti le direzioni 'su' e 'destra'
+    int up = -1;
+    int right = -1;
+    //verifichiamo se non c'e' nessun pezzo al movimento
+    if (piece != -1) {
+        int moveX, moveY;
+        //Se il pezzo e' bianco
+        if (piece % 2) {
+            up = 1;
+            right = 1;
+        }
+        //Impostiamo la variabile moveX e moveY in alto a destra
+        moveX = x + right;
+        moveY = y + up;
+        //Se in alto a destra non c'e' nessun pezzo
+        if (board[moveX][moveY] == -1) {
+            //aggiunge in alto a destra una mossa disponibile
+            moves[n] = (SDL_Point) { moveX,moveY };
+            //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
+            eating_pieces[n] = (SDL_Point) { -1,-1 };
+            n++;
+        }
+        //Se il pezzo e' una pedina e se la pedina in alto a destra e' un nemico controlla ancora in alto a destra del nemico se c'e' una casella libera
+        if (piece <= 1 && board[moveX][moveY] == enemy) {
+            moveX = x + 2 * right;
+            moveY = y + 2 * up;
+            if (board[moveX][moveY] == -1) {
+                moves[n] = (SDL_Point) { moveX,moveY };
+                //aggiunge all' array dei pezzi mangiabili la pedina che si trova in alto a destra
+                eating_pieces[n] = (SDL_Point) { x + right,y + up };
+                n++;
+            }
+        }
+        //Impostiamo la variabile moveX e moveY in alto a sinistra
+        moveX = x - right;
+        moveY = y + up;
+        //Se in alto a sinistra non c'e' nessun pezzo
+        if (board[moveX][moveY] == -1) {
+            //aggiunge in alto a sinistra una mossa disponibile
+            moves[n] = (SDL_Point) { moveX,moveY };
+            //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
+            eating_pieces[n] = (SDL_Point) { -1,-1 };
+            n++;
+        }
+        //Se il pezzo e' una pedina e se la pedina in alto a sinistra e' un nemico controlla ancora in alto a destra del nemico se c'e' una casella libera
+        if (piece <= 1 && board[moveX][moveY] == enemy) {
+            moveX = x - 2 * right;
+            moveY = y + 2 * up;
+            if (board[moveX][moveY] == -1) {
+                moves[n] = (SDL_Point) { moveX,moveY };
+                //aggiunge all' array dei pezzi mangiabili la pedina che si trova in alto a sinistra
+                eating_pieces[n] = (SDL_Point) { x - right,y + up };
+                n++;
+            }
+        }
+
+        //Se il pezzo è una dama
+        if(piece > 1){
+            //mosse disponibili in basso a destra
+            moveX = x + right;
+            moveY = y - up;
+            //Se c'e' una casella libera in basso a destra 
+            if (board[moveX][moveY] == -1) {
+                //Aggiunge che c'e' una mossa disponibile in basso a destra
+                moves[n] = (SDL_Point) { moveX,moveY };
+                //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
+                eating_pieces[n] = (SDL_Point) { -1,-1 };
+                n++;
+            }
+            //Se nella casella in basso a destra c'e' un nemico allora verifichiamo ancora dopo se una casella e' libera 
+            if (board[moveX][moveY] % 2 == enemy ) {
+                moveX = x + 2 * right;
+                moveY = y - 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    //aggiungiamo alle mosse disponibili quella in basso a destra
+                    moves[n] = (SDL_Point) { moveX,moveY };
+                    //aggiunge all' array dei pezzi mangiabili la pedina che si trova in basso a destra
+                    eating_pieces[n] = (SDL_Point) { x + right,y - up };
+                    n++;
+                }
+            }
+
+            moveX = x - right;
+            moveY = y - up;
+            //verifichiamo se in basso a sinistra c'e' una casella vuota
+            if (board[moveX][moveY] == -1) {
+                //aggiungiamo alle mosse disponibili quella in basso a sinistra
+                moves[n] = (SDL_Point) { moveX,moveY };
+                //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
+                eating_pieces[n] = (SDL_Point) { -1,-1 };
+                n++;
+            }
+            //Se nella casella in basso a sinistra c'e' un nemico allora verifichiamo ancora dopo se una casella e' libera 
+            if (board[moveX][moveY] % 2 == enemy) {
+                moveX = x - 2 * right;
+                moveY = y - 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    //aggiungiamo alle mosse disponibili quella in basso a sinistra
+                    moves[n] = (SDL_Point) { moveX,moveY };
+                    //aggiunge all' array dei pezzi mangiabili la pedina che si trova in basso a sinistra
+                    eating_pieces[n] = (SDL_Point) { x - right,y - up };
+                    n++;
+                }
+            }
+
+            moveX = x + right;
+            moveY = y + up;
+            //Se nella casella in alto a destra c' e' un nemico allora verifichiamo ancora dopo se una casella e' libera
+            if (board[moveX][moveY]%2 == enemy) {
+                moveX = x + 2 * right;
+                moveY = y + 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    //aggiungiamo alle mosse disponibili quella in alto a destra
+                    moves[n] = (SDL_Point) { moveX,moveY };
+                    //aggiunge all'array dei pezzi mangiabili la pedina che si trova in alto a destra
+                    eating_pieces[n] = (SDL_Point) { x + right,y + up };
+                    n++;
+                }
+            }
+
+            moveX = x - right;
+            moveY = y + up;
+            //Se nella casella in alto a sinistra c' e' un nemico allora verifichiamo ancora dopo se una casella e' libera
+            if (board[moveX][moveY]%2 == enemy) {
+                moveX = x - 2 * right;
+                moveY = y + 2 * up;
+                if (board[moveX][moveY] == -1) {
+                    //aggiungiamo alle mosse disponibili quella in alto a sinistra
+                    moves[n] = (SDL_Point) { moveX,moveY };
+                    //aggiunge all'array dei pezzi mangiabili la pedina che si trova in alto a sinistra
+                    eating_pieces[n] = (SDL_Point) { x - right,y + up };
+                    n++;
+                }
+            }
+        }
+        *n_moves = n;
+    }
+}
+
+void resetGame(bool* turn, int board[BOARD_SIZE][BOARD_SIZE], int *ate, int* n_moves, int* game_state, SDL_Texture* end_game_texture){
+    *turn = 0; 
+    for(int y = 0; y<BOARD_SIZE; y++){
+        for(int x = 0; x<BOARD_SIZE; x++){
+            board[x][y] = -1;
+            int even = (x + y) % 2; 
+            if( even && y < BOARD_SIZE/2 - 1)
+                board[x][y] = 1;
+            if( even && y > BOARD_SIZE/2)
+                board[x][y] = 0;
+        }
+    }
+    *ate = 0; *n_moves = 0;
+    *game_state = 0;
+    if (end_game_texture != NULL){
+        free(end_game_texture);
+    }
+}
 
 int main(int argc, char* argv[]) {
     const int WINDOW_WIDTH = 800, WINDOW_HEIGHT = 800;
@@ -164,7 +414,7 @@ int main(int argc, char* argv[]) {
                         }
 
                         if(game_state != 0){
-                            resetGame;
+                            resetGame(&turn, board, &ate, &n_moves, &game_state, end_game_texture);
                         }
                         //Se si sta muovendo un pezzo controllare se la mossa è valida, in caso positivo la mossa è fatta.
                         if(movingPiece % 2 == turn){
@@ -291,157 +541,20 @@ int main(int argc, char* argv[]) {
                             }
 
                         }
-
                         /*Controlla se il pezzo cliccato è una pedina e se il pezzo cliccato è una pedina con mosse disponibili
-                         board[x][y]%2 == turn
-                        */
+                         board[x][y]%2 == turn*/
+
+                        printf("La situazione della patta: %d\n", patta(board, turn));
+                        printf("C'e' un pezzo %d", isThereAnyPiece(board));
+                        if(patta(board, turn) == true && isThereAnyPiece(board) == true){
+                            game_state = 3;
+                        }
                         if(playButtonFlag && (movingPiece == -1 || board[x][y]%2 == turn)){
                             // Piece e' la pedina
                             int piece = board[x][y];
                             //verifichiamo se il turno e' (bianco / nero) e il pezzo e' (bianco / nero) e che l'ultima mossa che ha fatto non ha mangiato nessuno pezzo
-                            if(turn == piece % 2 && ate == 0) {
-                                // la variabile enemy intende dire che il pezzo opposto, nel senso che se e' il turno del bianco allora il nero e' il suo enemy e viceversa
-                                int enemy = (piece + 1) % 2;
-                                int n = 0;
-                                // Se il pezzo è bianco inverti le direzioni 'su' e 'destra'
-                                int up = -1;
-                                int right = -1;
-                                //verifichiamo se non c'e' nessun pezzo al movimento
-                                if (piece != -1) {
-                                    int moveX, moveY;
-                                    //Se il pezzo e' bianco
-                                    if (piece % 2) {
-                                        up = 1;
-                                        right = 1;
-                                    }
-                                    //Impostiamo la variabile moveX e moveY in alto a destra
-                                    moveX = x + right;
-                                    moveY = y + up;
-                                    //Se in alto a destra non c'e' nessun pezzo
-                                    if (board[moveX][moveY] == -1) {
-                                        //aggiunge in alto a destra una mossa disponibile
-                                        moves[n] = (SDL_Point) { moveX,moveY };
-                                        //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
-                                        eating_pieces[n] = (SDL_Point) { -1,-1 };
-                                        n++;
-                                    }
-                                    //Se il pezzo e' una pedina e se la pedina in alto a destra e' un nemico controlla ancora in alto a destra del nemico se c'e' una casella libera
-                                    if (piece <= 1 && board[moveX][moveY] == enemy) {
-                                        moveX = x + 2 * right;
-                                        moveY = y + 2 * up;
-                                        if (board[moveX][moveY] == -1) {
-                                            moves[n] = (SDL_Point) { moveX,moveY };
-                                            //aggiunge all' array dei pezzi mangiabili la pedina che si trova in alto a destra
-                                            eating_pieces[n] = (SDL_Point) { x + right,y + up };
-                                            n++;
-                                        }
-                                    }
-                                    //Impostiamo la variabile moveX e moveY in alto a sinistra
-                                    moveX = x - right;
-                                    moveY = y + up;
-                                    //Se in alto a sinistra non c'e' nessun pezzo
-                                    if (board[moveX][moveY] == -1) {
-                                        //aggiunge in alto a sinistra una mossa disponibile
-                                        moves[n] = (SDL_Point) { moveX,moveY };
-                                        //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
-                                        eating_pieces[n] = (SDL_Point) { -1,-1 };
-                                        n++;
-                                    }
-                                    //Se il pezzo e' una pedina e se la pedina in alto a sinistra e' un nemico controlla ancora in alto a destra del nemico se c'e' una casella libera
-                                    if (piece <= 1 && board[moveX][moveY] == enemy) {
-                                        moveX = x - 2 * right;
-                                        moveY = y + 2 * up;
-                                        if (board[moveX][moveY] == -1) {
-                                            moves[n] = (SDL_Point) { moveX,moveY };
-                                            //aggiunge all' array dei pezzi mangiabili la pedina che si trova in alto a sinistra
-                                            eating_pieces[n] = (SDL_Point) { x - right,y + up };
-                                            n++;
-                                        }
-                                    }
-
-                                    //Se il pezzo è una dama
-                                    if(piece > 1){
-                                        //mosse disponibili in basso a destra
-                                        moveX = x + right;
-                                        moveY = y - up;
-                                        //Se c'e' una casella libera in basso a destra 
-                                        if (board[moveX][moveY] == -1) {
-                                            //Aggiunge che c'e' una mossa disponibile in basso a destra
-                                            moves[n] = (SDL_Point) { moveX,moveY };
-                                            //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
-                                            eating_pieces[n] = (SDL_Point) { -1,-1 };
-                                            n++;
-                                        }
-                                        //Se nella casella in basso a destra c'e' un nemico allora verifichiamo ancora dopo se una casella e' libera 
-                                        if (board[moveX][moveY] % 2 == enemy ) {
-                                            moveX = x + 2 * right;
-                                            moveY = y - 2 * up;
-                                            if (board[moveX][moveY] == -1) {
-                                                //aggiungiamo alle mosse disponibili quella in basso a destra
-                                                moves[n] = (SDL_Point) { moveX,moveY };
-                                                //aggiunge all' array dei pezzi mangiabili la pedina che si trova in basso a destra
-                                                eating_pieces[n] = (SDL_Point) { x + right,y - up };
-                                                n++;
-                                            }
-                                        }
-
-                                        moveX = x - right;
-                                        moveY = y - up;
-                                        //verifichiamo se in basso a sinistra c'e' una casella vuota
-                                        if (board[moveX][moveY] == -1) {
-                                            //aggiungiamo alle mosse disponibili quella in basso a sinistra
-                                            moves[n] = (SDL_Point) { moveX,moveY };
-                                            //aggiunge all' array dei pezzi mangiabili il niente ovvero un pezzo vuoto
-                                            eating_pieces[n] = (SDL_Point) { -1,-1 };
-                                            n++;
-                                        }
-                                        //Se nella casella in basso a sinistra c'e' un nemico allora verifichiamo ancora dopo se una casella e' libera 
-                                        if (board[moveX][moveY] % 2 == enemy) {
-                                            moveX = x - 2 * right;
-                                            moveY = y - 2 * up;
-                                            if (board[moveX][moveY] == -1) {
-                                                //aggiungiamo alle mosse disponibili quella in basso a sinistra
-                                                moves[n] = (SDL_Point) { moveX,moveY };
-                                                //aggiunge all' array dei pezzi mangiabili la pedina che si trova in basso a sinistra
-                                                eating_pieces[n] = (SDL_Point) { x - right,y - up };
-                                                n++;
-                                            }
-                                        }
-
-                                        moveX = x + right;
-                                        moveY = y + up;
-                                        //Se nella casella in alto a destra c' e' un nemico allora verifichiamo ancora dopo se una casella e' libera
-                                        if (board[moveX][moveY]%2 == enemy) {
-                                            moveX = x + 2 * right;
-                                            moveY = y + 2 * up;
-                                            if (board[moveX][moveY] == -1) {
-                                                //aggiungiamo alle mosse disponibili quella in alto a destra
-                                                moves[n] = (SDL_Point) { moveX,moveY };
-                                                //aggiunge all'array dei pezzi mangiabili la pedina che si trova in alto a destra
-                                                eating_pieces[n] = (SDL_Point) { x + right,y + up };
-                                                n++;
-                                            }
-                                        }
-
-                                        moveX = x - right;
-                                        moveY = y + up;
-                                        //Se nella casella in alto a sinistra c' e' un nemico allora verifichiamo ancora dopo se una casella e' libera
-                                        if (board[moveX][moveY]%2 == enemy) {
-                                            moveX = x - 2 * right;
-                                            moveY = y + 2 * up;
-                                            if (board[moveX][moveY] == -1) {
-                                                //aggiungiamo alle mosse disponibili quella in alto a sinistra
-                                                moves[n] = (SDL_Point) { moveX,moveY };
-                                                //aggiunge all'array dei pezzi mangiabili la pedina che si trova in alto a sinistra
-                                                eating_pieces[n] = (SDL_Point) { x - right,y + up };
-                                                n++;
-                                            }
-                                        }
-                                    }
-                                    n_moves = n;
-                                }
-                            }
-                            
+                            if(turn == piece % 2 && ate == 0)
+                            get_moves(board, piece, &n_moves, x,y, moves, eating_pieces);
                             
                             //Se ci sono piu' di zero movimenti allora movingPiece sara' uguale al turno
                             if(n_moves > 0){
@@ -449,9 +562,7 @@ int main(int argc, char* argv[]) {
                                 lastY = y;
                                 movingPiece = turn;
                             }
-
                         }
-
                         if(!playButtonFlag && !themeButtonFlag)
                         if (SDL_PointInRect(&mousePoint, &playButton)) {
                             playButtonFlag = true;
@@ -537,8 +648,10 @@ int main(int argc, char* argv[]) {
                 char* testo;
                 if(game_state == 1){
                     testo = "Il bianco ha vinto";
-                }else{
+                }else if (game_state == 2){
                     testo = "Il nero ha vinto";
+                } else if (game_state == 3){
+                    testo = "Patta";
                 }
 
                 SDL_Surface* text_surface; 
